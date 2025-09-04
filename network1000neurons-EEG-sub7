@@ -1,0 +1,76 @@
+import os
+import requests
+import numpy as np
+import matplotlib.pyplot as plt
+import mne
+
+# ==============================
+# 1. EEG files URLs for participant 07
+# ==============================
+files = {
+    "vhdr": "https://s3.amazonaws.com/openneuro.org/ds005815/sub-07/ses-1/eeg/sub-07_ses-1_task-rest1_eeg.vhdr?versionId=onnVurMZJP734Uj0olOg9IIIOldaXrcb",
+    "eeg": "https://s3.amazonaws.com/openneuro.org/ds005815/sub-07/ses-1/eeg/sub-07_ses-1_task-rest1_eeg.eeg?versionId=Bn23difsy3XJAIJ7WoC7tQCUHS9LZ.I4",
+    "vmrk": "https://s3.amazonaws.com/openneuro.org/ds005815/sub-07/ses-1/eeg/sub-07_ses-1_task-rest1_eeg.vmrk?versionId=2Q.hj9KlXnJEQNgVYAqFDFwRwNU97fZr"
+}
+
+# ==============================
+# 2. Download EEG files temporarily
+# ==============================
+def download_file(url, filename):
+    response = requests.get(url)
+    response.raise_for_status()
+    with open(filename, 'wb') as f:
+        f.write(response.content)
+
+for key, url in files.items():
+    filename = url.split('/')[-1].split('?')[0]
+    if not os.path.exists(filename):
+        download_file(url, filename)
+
+# ==============================
+# 3. Load EEG data
+# ==============================
+vhdr_file = files["vhdr"].split('/')[-1].split('?')[0]
+raw = mne.io.read_raw_brainvision(vhdr_file, preload=True, verbose=False)
+data = raw.get_data()  # shape: channels x times
+stimuli = data[:3].T   # first 3 channels as example
+
+# ==============================
+# 4. Vectorized 1000-neuron network
+# ==============================
+num_neurons = 1000
+eta = 0.1
+weights = np.random.rand(num_neurons)
+steps, channels = stimuli.shape
+outputs = np.zeros((steps, num_neurons))
+
+for ch in range(channels):
+    x = stimuli[:, ch].reshape(-1, 1)  # steps x 1
+    y = x * weights                     # steps x neurons
+    outputs += y
+    weights += eta * (y * x).sum(axis=0)
+
+# ==============================
+# 5. Plot a subset of neurons
+# ==============================
+neurons_to_plot = 10
+plt.figure(figsize=(15, 12))
+for n in range(neurons_to_plot):
+    plt.subplot(neurons_to_plot, 1, n+1)
+    plt.plot(outputs[:, n], color='b')
+    plt.title(f'Neuron {n+1}')
+    plt.xlabel('Step')
+    plt.ylabel('Output y')
+plt.tight_layout()
+plt.show()
+
+# ==============================
+# 6. Plot average network response
+# ==============================
+avg_output = outputs.mean(axis=1)
+plt.figure(figsize=(10, 5))
+plt.plot(avg_output, color='r')
+plt.title(f'Average Response of {num_neurons} Neurons')
+plt.xlabel('Step')
+plt.ylabel('Average Output y')
+plt.show()
